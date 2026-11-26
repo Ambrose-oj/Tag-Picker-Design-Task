@@ -5,6 +5,13 @@ export type TagOption = { value: string; label: string; keywords?: readonly stri
 /** Category look: `hue` is an OKLCH hue (0-360) that tints every tag in the group. */
 export type TagGroups = Record<string, { label: string; hue: number }>;
 
+/** Options can be given as plain strings or full objects. */
+export type Option = string | TagOption;
+
+export function optionShape(option: Option): TagOption {
+  return typeof option === "string" ? { value: option, label: option } : option;
+}
+
 /** "the same tag" = same text after trimming, collapsing spaces and lowercasing. */
 export function tagSlug(t: string): string {
   return t.trim().replace(/\s+/g, " ").toLowerCase();
@@ -215,4 +222,91 @@ export function fuzzyMatchTagOptions(
     .sort((a, b) => a.best - b.best || a.option.label.length - b.option.label.length)
     .slice(0, limit)
     .map(({ option }) => option);
+}
+
+export type AdditionProblem = {
+  reason: "too_long" | "not_in_list" | "no_room";
+  /** What the person typed or picked. */
+  text: string;
+  /** Plain-language explanation, ready to show. */
+  message: string;
+};
+
+export type AdditionPlan = {
+  /** The full list after the additions, in the order tags were added. */
+  next: string[];
+  added: string[];
+  problems: AdditionProblem[];
+  /** The last tag that was already selected, if any. */
+  duplicate: string | null;
+};
+
+/**
+ * Decide what happens when someone adds these tags. Each one is checked on its
+ * own, so a bad one never blocks the good ones, and every refusal says why.
+ * Pure: no state, no React. The picker just applies the plan.
+ */
+export function planAdditions({
+  raws,
+  selected,
+  options,
+  allowCustom = false,
+  maxTagLength = 30,
+  maxChars,
+  sizeOf = ownLength,
+  labelOf = (tag) => tag,
+}: {
+  raws: readonly string[];
+  selected: readonly string[];
+  options: readonly TagOption[];
+  allowCustom?: boolean;
+  maxTagLength?: number;
+  maxChars?: number;
+  sizeOf?: TagSize;
+  labelOf?: (tag: string) => string;
+}): AdditionPlan {
+  const next = [...selected];
+  const added: string[] = [];
+  const problems: AdditionProblem[] = [];
+  let duplicate: string | null = null;
+  const holds = (tag: string) => next.some((item) => tagSlug(item) === tagSlug(tag));
+
+  for (const raw of raws) {
+    const text = raw.trim().replace(/\s+/g, " ");
+    if (!text) continue;
+    if (text.length > maxTagLength) {
+      problems.push({ reason: "too_long", text, message: `“${text.slice(0, 18)}…” is over ${maxTagLength} characters` });
+      continue;
+    }
+    // "setup figma" typed and "Figma setup" picked must become the same tag.
+    const tag = canonicalTagFor(text, options) ?? (allowCustom ? text : null);
+    if (!tag) {
+      problems.push({ reason: "not_in_list", text, message: `“${text}” is not in the list` });
+      continue;
+    }
+    if (holds(tag)) {
+      duplicate = tag;
+      continue;
+    }
+    if (maxChars !== undefined) {
+      const left = Math.max(maxChars - tagCharCount(next, sizeOf), 0);
+      if (sizeOf(tag) > left) {
+        problems.push({ reason: "no_room", text: tag, message: `“${labelOf(tag)}” needs ${sizeOf(tag)} characters, only ${left} left` });
+        continue;
+      }
+    }
+    next.push(tag);
+    added.push(tag);
+  }
+  return { next, added, problems, duplicate };
+}
+
+/** Move one item to a new position, returning a new list. Out-of-range targets are clamped. */
+export function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
+  if (from < 0 || from >= list.length) return [...list];
+  const clamped = Math.max(0, Math.min(to, list.length - 1));
+  const out = [...list];
+  const [item] = out.splice(from, 1);
+  out.splice(clamped, 0, item);
+  return out;
 }

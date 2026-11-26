@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { motion } from "motion/react";
+import { m } from "motion/react";
 import { cn } from "../lib/cn";
 
 export type BudgetSegment = {
@@ -45,7 +45,7 @@ export function BudgetBar({
       className="mt-2 flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-surface-2"
     >
       {segments.map((segment) => (
-        <motion.div
+        <m.div
           key={segment.slug}
           title={`${segment.label} · ${segment.size}`}
           initial={{ flexGrow: 0, opacity: 0 }}
@@ -67,7 +67,7 @@ export function BudgetBar({
         />
       ))}
       {ghost && ghostSize > 0 && (
-        <motion.div
+        <m.div
           key="ghost"
           initial={{ flexGrow: 0 }}
           animate={{ flexGrow: ghostSize }}
@@ -83,7 +83,7 @@ export function BudgetBar({
           className={cn("rounded-full", ghostFits ? "bg-primary/70" : "bg-danger")}
         />
       )}
-      <motion.div
+      <m.div
         initial={false}
         animate={{ flexGrow: Math.max(left - ghostSize, 0) }}
         transition={spring}

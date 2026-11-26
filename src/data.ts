@@ -71,3 +71,47 @@ export const RECOMMENDATIONS: TagRecommendations = {
     "motion design": rel([["After Effects", 30], ["Animation", 25], ["Framer", 10]]),
   },
 };
+
+/**
+ * Pretend server catalogue, for the async search demo. In a real app this lives
+ * behind an API; the picker only needs a function that returns options.
+ */
+const REMOTE: Array<[string, string, string[]?]> = [
+  ["Rust", "engineering"], ["Go", "engineering", ["golang"]], ["Kotlin", "engineering", ["android"]],
+  ["Flutter", "engineering", ["dart", "mobile"]], ["PostgreSQL", "engineering", ["sql", "database"]],
+  ["Docker", "engineering", ["containers"]], ["Prisma", "engineering", ["orm"]], ["Bun", "engineering"],
+  ["Astro", "frontend"], ["Remix", "frontend"], ["SolidJS", "frontend"], ["Vite", "frontend", ["bundler"]],
+  ["D3.js", "frontend", ["charts", "data visualization"]], ["Vitest", "frontend", ["testing"]],
+  ["Playwright", "frontend", ["testing", "e2e"]], ["Cypress", "frontend", ["testing", "e2e"]],
+  ["GSAP", "motion", ["animation"]], ["Rive", "motion", ["animation"]], ["Spline", "motion", ["3d"]],
+  ["Cinema 4D", "motion", ["3d"]], ["Procreate", "design", ["illustration"]], ["Typography", "design", ["type", "fonts"]],
+  ["Brand identity", "design", ["logo", "branding"]], ["Color theory", "design", ["colour"]],
+  ["Design critique", "design"], ["DesignOps", "design", ["operations"]], ["Service design", "research"],
+  ["Journey mapping", "research", ["ux"]], ["A/B testing", "research", ["experiments"]],
+  ["Content design", "research", ["copywriting"]], ["Copywriting", "research", ["content", "writing"]],
+  ["Figma plugins", "design", ["extensions"]], ["WCAG", "research", ["accessibility", "a11y"]],
+  ["Data visualization", "frontend", ["charts"]], ["Technical writing", "research", ["docs"]],
+];
+
+let failedOnce = false;
+
+/** Fake network call: 350 ms, cancellable. A query containing "fail" errors once, so the retry state can be seen. */
+export function searchRemoteSkills(query: string, signal: AbortSignal): Promise<TagOption[]> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (query.toLowerCase().includes("fail") && !failedOnce) {
+        failedOnce = true;
+        reject(new Error("Network error"));
+        return;
+      }
+      const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+      resolve(
+        REMOTE.filter(([label, , keywords = []]) => {
+          const hay = [label, ...keywords].join(" ").toLowerCase();
+          return tokens.every((token) => hay.includes(token));
+        }).map(([label, group, keywords]) => ({ value: label, label, group, keywords })),
+      );
+    }, 350);
+    signal.addEventListener("abort", () => { clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); });
+  });
+}

@@ -1,55 +1,53 @@
-# Tag Picker: what I changed and why
+# Tag Picker, round 2
 
-Run with `npm install` and `npm run dev`. `npm run build` (typecheck + build) passes.
-`TagPicker`'s existing props are unchanged. New optional props: `groups` and `ariaLabel`.
-Two small dependencies added: `motion` (layout animation) and `@fontsource-variable/inter` (bundled font, works offline).
+Run with `npm install` and `npm run dev`. `npm run build` typechecks and builds.
+Tests: `npm test` (unit and component, no browser needed) and `npm run test:e2e` (real browser; run `npx playwright install chromium` once first).
 
-## Approach
-I used the picker like a user first (phone, keyboard only, pasting lists) and wrote down where it hurt.
-The starter had good logic in `lib/tags.ts`, so I kept it and rebuilt the interaction and visual layer.
-Then I asked what would make people say "that is smart" rather than "that works".
+Round 1 (see below) made the picker feel good. This round does everything I listed under "what I would do with more time", and I tried to be honest where I made a trade-off or could not check something.
 
-## The signature idea: the budget is something you can see
-The 100-character limit is the hardest part of this picker, and a plain `10 / 100` hides it.
-- **Stacked budget bar.** One coloured segment per tag, sized by its length. Hover a tag and its segment lights up.
-- **Ghost preview.** Hover (or arrow onto) any suggestion and a striped segment shows how much room it would take. It turns red when it will not fit, with the reason in words.
-- Tags that no longer fit are greyed out, not hidden. Clicking one explains why.
+## What I built this round
 
-## Interaction
-- **Real combobox.** ↑ ↓ Home End Enter Esc, `aria-activedescendant`, live announcements. Enter adds the highlighted suggestion (the starter added the raw text).
-- **Typo tolerance.** "typscript" finds TypeScript, "figam" finds Figma (`fuzzyMatchTagOptions`, an edit-distance fallback shown as "Did you mean").
-- **Comma and paste.** A comma commits a tag. Pasting `a, b, c` or a list of lines adds them all, each checked on its own.
-- **Nothing is destructive.** Full undo/redo history (Ctrl/⌘ Z, Shift+Z, buttons, and an "Undo" after any removal including Clear all). Backspace on an empty box first highlights the last tag, the second press removes it.
-- **Honest errors.** Too long, not in the list, or no room: each says exactly why instead of being dropped or cut.
-- **Blur is careful.** Leaving the box commits only real tags (or a custom tag nothing else could mean). Half-typed text stays put.
-- `/` jumps to the picker from anywhere.
+| From my list                   | What it is now                                                                                                                                                                                                                                                                         |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tests                          | **42 unit and component tests** (Vitest + Testing Library) and **15 browser tests** (Playwright, desktop and phone layouts). The tests found one real bug (see Decisions).                                                                                                             |
+| Drag to reorder                | Drag a tag onto another, or press **Alt + ← →** (Alt + Home/End for the ends). Focus stays on the moved tag and a screen-reader message says where it went. Dragging reorders live but is committed once, so one drag is one undo step.                                                |
+| Order matters                  | New `featuredCount` prop. The first N tags get numbered badges and a line explaining it. The demo's profile card shows them large, the rest under "Also".                                                                                                                              |
+| Phone keyboard                 | The sheet follows the visual viewport (`useVisualViewport`), so its bottom is not hidden by the on-screen keyboard.                                                                                                                                                                    |
+| Bundle size                    | The animation engine loads on demand (`LazyMotion`). First load JS: **400 kB → 315 kB** (gzip 129 → 102 kB); the other 100 kB loads right after. Total size is not smaller, only what blocks first paint.                                                                              |
+| Async options                  | `loadOptions(query, signal)`: debounced, the previous request is aborted so a slow old answer can never overwrite a new one, a loading state, and an error with **Retry**. Picked online tags keep their label and category colour. (In the demo, type "fail" to see the error state.) |
+| Disabled / readOnly / required | `disabled` (not submitted), `readOnly` (plain tags, still submitted), `required` using the browser's own form validation (`setCustomValidity`), and an `error` prop for server errors. The demo is now a real form with Save.                                                          |
+| Analytics hooks                | `onEvent` reports add (with **source**: suggestion / typed / paste / catalog / recommendation / top 3, plus the row position and query), remove, reorder, reject (with reason), search (results, fuzzy/online used), undo, redo, clear, open sheet. The demo lists them live.          |
+| Floating undo                  | "Removed X · Undo" is a floating toast that pauses while hovered or focused, so it never moves the layout.                                                                                                                                                                             |
 
-## Discovery
-- **Categories.** Tags are tinted by category (Design, Frontend, Motion & 3D…) with filter tabs showing how many you picked in each. Colours come from one OKLCH hue per group, with light/dark tuned for contrast.
-- **Recommendations explain themselves.** "38 people who use Figma also use this", or "pairs well with Figma & React". One-click **Add top 3**.
-- Tags keep the order you added them in (the starter re-sorted alphabetically, so new tags jumped around). Custom tags have a dashed border.
+## Decisions and trade-offs
 
-## Mobile
-- Tapping the field opens a **full-screen sheet** with a sticky header ("2 selected · 90 characters left", **Done**), results in the flow instead of a floating popover, and the page behind frozen.
-- Larger touch targets (`pointer: coarse`), 16px input to avoid iOS zoom, category tabs scroll sideways, a small haptic tick on add.
-- Tested on an **iPhone 13 Pro** and an **Android phone** (dev server over the local network), on top of Chromium emulation. The one problem found was a copy-to-clipboard button I had added to the demo: browsers only allow clipboard access on secure pages (https or localhost), so it failed on a phone loading `http://192.168…`. I removed it, since the picker does not need it. Tap highlight and double-tap delay were also tidied, and `theme-color` follows light/dark.
-- Fixed a layout bug I found while testing: the horizontally scrolling tab strip stretched the whole page wider than the phone.
+- **Tests found a real bug.** With no character limit, the "Clear all" button did not show until after another action. Fixed.
+- **Rules moved out of the component.** The add rules (too long, not in list, duplicate, no room) are now one pure function, `planAdditions`, so they are unit-tested directly and the component just applies the result.
+- **Drag vs scroll on touch.** Dragging a tag blocks page scroll only when the touch starts on a tag. Tags are small, and the page scrolls everywhere else. The keyboard route needs no drag at all.
+- **Live drag, single commit.** Neighbours trade places while you drag, but the list is only committed when you let go, so `onChange` fires once and undo is one step.
+- **Order is a choice, not a default.** Reordering exists for `featuredCount`, but works without it. The picker stays a plain tag picker if you do not pass the prop.
+- **Online results are trusted as the server returned them** (the server may match more loosely than local rules), but an older answer is only shown while it still matches what is typed.
+- **I did not virtualise the result list.** Results are already capped (24 local, 8 online), so windowing would add code for no visible gain. It becomes worth it if those caps are raised to hundreds.
 
-## Craft
-- Spring layout animation: tags reflow, the budget segments grow, and suggestions slide when you filter or add. Respects `prefers-reduced-motion`.
-- Demo page shows a live **profile preview** (top skills as they would appear), so the picker is seen in context.
-- Theme follows the system, is remembered, and applies before first paint (no white flash).
-- Accessibility: labelled meter, `aria-pressed` on pills, the covered list is `inert` while suggestions are open, visible focus rings everywhere.
+## What I checked, and what I could not
+
+- Unit, component and browser tests all pass. Browser tests include real mouse dragging, the online-search loading and retry states, form validation, and the phone sheet.
+- Tested by hand on an **iPhone 13 Pro** and an **Android phone** (dev server over the local network), in both rounds. Round 2 additions work on both: the full-screen sheet with the keyboard up, touch dragging, the floating undo, online search and the form states. Round 1's one problem there was a copy-to-clipboard button (browsers block clipboard access on plain `http://` addresses), which I removed.
+- **TalkBack** (Android) and **VoiceOver** (iPhone) were both tried by hand and work: the combobox, suggestions, add/remove announcements and the tag controls are announced correctly. Roles, labels, live announcements and keyboard paths follow the standard combobox pattern and are covered by tests.
+
+## Still open
+
+- Server-side: the demo "server" is a function in `data.ts`. A real one needs caching and rate limits.
+- Broader device and browser checks (older iOS, Firefox, Samsung Internet).
+- Design polish: a sound/haptic language, and an animation when a tag moves between featured and not.
+
+## Round 1 summary (still in the code)
+
+Stacked **budget bar** (one segment per tag, with a ghost preview of the next tag), colour **categories** with filter tabs, recommendations that explain themselves, typo-tolerant search, full undo/redo, a full-screen **phone sheet**, spring animations, accessibility (combobox roles, live announcements, focus rings), theme that follows the system, and a live profile preview.
 
 ## Structure
-- `lib/tags.ts`: pure helpers (ranking, fuzzy match, recommendations with reasons, budget rule). No React.
-- `lib/useSelection.ts`: controlled/uncontrolled value with undo/redo.
-- `components/BudgetBar.tsx`, `TagPicker.tsx`, `data.ts` (adds categories), `App.tsx` (demo + preview).
 
-## What I would do with more time
-- **Tests.** Unit tests for `lib/` and the `addTags` rules, and Playwright tests for the keyboard and sheet flows. I checked those by script in Chromium and by hand on two phones, but did not add a runner, to keep `npm install` light.
-- **Drag to reorder**, with Alt+← → for keyboard, if order matters on profiles (the preview shows the first six).
-- **More device testing.** I checked one iPhone and one Android phone by hand, not a wider range of sizes/OS versions, and not with VoiceOver/TalkBack. The sheet could also follow `visualViewport`, so the results list is never covered by the on-screen keyboard.
-- **Bundle size.** `motion` is about 150 kB; `LazyMotion` with only the features used would trim it.
-- **Async options** (debounce, loading, abort) and virtualised results for big catalogs; `disabled` / `readOnly` / `required` props with form validation.
-- Analytics hooks (which suggestions get accepted) to tune the ranking, and an "undo" toast that can float instead of sitting inline.
+- `lib/tags.ts`: pure helpers (ranking, fuzzy match, recommendations with reasons, `planAdditions`, `moveItem`). No React.
+- `lib/useSelection.ts` (undo/redo), `useAsyncOptions.ts`, `useVisualViewport.ts`, `useMedia.ts`, `events.ts`.
+- `components/`: `Chip`, `BudgetBar`, `Toast`. `TagPicker.tsx` wires everything. `App.tsx` is the demo.
+- `src/**/*.test.ts(x)`: Vitest. `e2e/`: Playwright.
